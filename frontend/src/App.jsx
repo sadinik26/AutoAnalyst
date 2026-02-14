@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import axios from "axios";
+import "./App.css";
 
 function App() {
   const [topic, setTopic] = useState("");
   const [report, setReport] = useState("");
   const [loading, setLoading] = useState(false);
+  const [boxHeight, setBoxHeight] = useState(400);
+  const isResizing = useRef(false);
 
   const handleResearch = async () => {
     if (!topic) return alert("Please enter a topic!");
@@ -12,73 +15,137 @@ function App() {
     setReport("");
     try {
       const response = await axios.get(
-        `http://localhost:8000/analyze?topic=${topic}`,
+        `http://localhost:8000/analyze?topic=${encodeURIComponent(topic)}`,
       );
       setReport(response.data.report);
     } catch (error) {
       console.error("Error fetching data:", error);
-      setReport(
-        "Failed to connect to the AI Agent. Make sure the backend is running.",
-      );
+      setReport("Connection failed. Ensure the backend is running.");
     }
     setLoading(false);
   };
 
-  return (
-    <div
-      style={{
-        maxWidth: "800px",
-        margin: "50px auto",
-        fontFamily: "system-ui",
-        textAlign: "center",
-      }}
-    >
-      <h1 style={{ color: "#2563eb" }}>Invenio AI Analyst</h1>
-      <p>Enter a company or technology to get a real-time market brief.</p>
+  const startResizing = () => {
+    isResizing.current = true;
+    document.addEventListener("mousemove", resize);
+    document.addEventListener("mouseup", stopResizing);
+    document.body.style.cursor = "ns-resize";
+  };
 
-      <div style={{ marginBottom: "20px" }}>
-        <input
-          type="text"
-          placeholder="e.g. NVIDIA AI Chips"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          style={{
-            padding: "12px",
-            width: "60%",
-            borderRadius: "8px",
-            border: "1px solid #ccc",
-          }}
-        />
-        <button
-          onClick={handleResearch}
-          disabled={loading}
-          style={{
-            padding: "12px 24px",
-            marginLeft: "10px",
-            borderRadius: "8px",
-            backgroundColor: "#2563eb",
-            color: "white",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          {loading ? "Agent Researching..." : "Run Agent"}
-        </button>
+  const stopResizing = () => {
+    isResizing.current = false;
+    document.removeEventListener("mousemove", resize);
+    document.removeEventListener("mouseup", stopResizing);
+    document.body.style.cursor = "default";
+  };
+
+  const resize = (e) => {
+    if (!isResizing.current) return;
+    const newHeight = window.innerHeight - e.clientY - 20;
+    if (newHeight > 150 && newHeight < window.innerHeight * 0.85) {
+      setBoxHeight(newHeight);
+    }
+  };
+
+  const renderReport = (rawText) => {
+    // 1. Clean technical markdown tags and remove ALL bold marks (**)
+    const cleanText = rawText
+      .replace(/```markdown|```/g, "")
+      .replace(/\*\*/g, "")
+      .trim();
+
+    // 2. Split by any header (## or ###)
+    const sections = cleanText.split(/(?=###? )/g);
+
+    // 3. Map and Filter to remove empty/useless boxes
+    return sections
+      .map((section, index) => {
+        const trimmed = section.trim();
+
+        // REMOVE: Empty strings or just stray # symbols
+        if (!trimmed || /^#+$/.test(trimmed)) {
+          return null;
+        }
+
+        const isMainHeader = trimmed.startsWith("## ");
+        const displayContent = trimmed.replace(/###? /g, "").trim();
+
+        // REMOVE: Generic titles or boxes with no real length
+        if (
+          displayContent.toLowerCase().includes("recent market developments") ||
+          displayContent.length < 2
+        ) {
+          return null;
+        }
+
+        return (
+          <div key={index} className="report-card">
+            <div className="report-card-content">
+              <div
+                className={
+                  isMainHeader
+                    ? "report-card-title topic-highlight"
+                    : "report-sub-section"
+                }
+              >
+                {displayContent}
+              </div>
+            </div>
+          </div>
+        );
+      })
+      .filter(Boolean); // This removes all the 'null' entries from the array
+  };
+
+  return (
+    <div className="hero-container">
+      <div className="accent-circle"></div>
+
+      <div className="content-wrapper">
+        <div className="text-section">
+          <h1 className="main-title">MarketIQ</h1>
+          <p className="subtitle">
+            AI-driven market insights at your fingertips.
+          </p>
+        </div>
+        <div className="form-section">
+          <div className="glass-card">
+            <div className="input-group">
+              <label>MARKET DESTINATION</label>
+              <input
+                type="text"
+                placeholder="e.g. NVIDIA AI Chips"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && handleResearch()}
+              />
+            </div>
+            <button
+              className="start-btn"
+              onClick={handleResearch}
+              disabled={loading}
+            >
+              {loading ? "SEARCHING..." : "START ANALYSIS"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {report && (
-        <div
-          style={{
-            textAlign: "left",
-            padding: "20px",
-            backgroundColor: "#f3f4f6",
-            borderRadius: "12px",
-            border: "1px solid #e5e7eb",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          <h3>Market Report:</h3>
-          {report}
+        <div className="bottom-report-overlay">
+          <div className="wide-report-box" style={{ height: `${boxHeight}px` }}>
+            <div className="resize-handle" onMouseDown={startResizing}>
+              <div className="handle-bar"></div>
+            </div>
+
+            <div className="report-header">
+              <h2 className="analysis-header">Results: {topic}</h2>
+              <button className="clear-btn" onClick={() => setReport("")}>
+                ✕
+              </button>
+            </div>
+            <div className="report-grid">{renderReport(report)}</div>
+          </div>
         </div>
       )}
     </div>
